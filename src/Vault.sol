@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "./MultiSig.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 abstract contract Vault is MultiSig {
     event Deposit(address indexed depositor, uint256 amount);
@@ -18,14 +19,14 @@ abstract contract Vault is MultiSig {
 
     function withdraw(uint256 amount) external whenNotPaused {
         require(balances[msg.sender] >= amount, "Insufficient balance");
-        
+
         balances[msg.sender] -= amount;
         totalVaultValue -= amount;
-        
-         // Fixed the (.transfer): to  (.call)
+
+        // Fixed the (.transfer): to  (.call)
         (bool success, ) = payable(msg.sender).call{value: amount}("");
         require(success, "Transfer failed");
-        
+
         emit Withdrawal(msg.sender, amount);
     }
 
@@ -35,43 +36,43 @@ abstract contract Vault is MultiSig {
         emit MerkleRootSet(root);
     }
 
-   
-    function claim(bytes32[] calldata proof, uint256 amount) external whenNotPaused {
+    function claim(
+        bytes32[] calldata proof,
+        uint256 amount
+    ) external whenNotPaused {
         bytes32 leaf = keccak256(abi.encodePacked(msg.sender, amount));
         bytes32 computed = MerkleProof.processProof(proof, leaf);
         require(computed == merkleRoot, "Invalid proof");
         require(!claimed[msg.sender], "Already claimed");
-        
+
         claimed[msg.sender] = true;
         totalVaultValue -= amount;
-        
+
         // Fixed the (.transfer): to  (.call)
         (bool success, ) = payable(msg.sender).call{value: amount}("");
         require(success, "Transfer failed");
-        
+
         emit Claim(msg.sender, amount);
     }
 
-  
     function verifySignature(
         address signer,
         bytes32 messageHash,
         bytes memory signature
     ) external pure returns (bool) {
-        return MerkleProof.recover(messageHash, signature) == signer;
+        return ECDSA.recover(messageHash, signature) == signer;
     }
-
 
     // Fixed the (emergencyWithdrawAll Public Drain)  access to only MultiSig
     function emergencyWithdrawAll(address payable to) external onlyMultisig {
         uint256 amount = address(this).balance;
         totalVaultValue = 0;
-        
+
         (bool success, ) = to.call{value: amount}("");
         require(success, "Transfer failed");
     }
 
-    // Fixed the (Pause Single Owner Control) so pausing the system requires MultiSig agreement 
+    // Fixed the (Pause Single Owner Control) so pausing the system requires MultiSig agreement
     function pause() external onlyMultisig {
         paused = true;
     }
